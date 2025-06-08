@@ -1,29 +1,17 @@
--- LocalScript: Put in StarterPlayerScripts
+-- LocalScript in StarterPlayerScripts
 local Players = game:GetService("Players")
 local player = Players.LocalPlayer
-local mouse = player:GetMouse()
 
--- Folder where all tools are located (searching everywhere in game)
-local function findAllTools()
-	local tools = {}
-	for _, obj in ipairs(game:GetDescendants()) do
-		if obj:IsA("Tool") then
-			table.insert(tools, obj)
-		end
-	end
-	return tools
-end
-
--- GUI creation
+-- GUI setup
 local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "ItemExplorerGui"
+screenGui.Name = "ExplorerGui"
 screenGui.ResetOnSpawn = false
 screenGui.Parent = player:WaitForChild("PlayerGui")
 
 local toggleButton = Instance.new("TextButton")
-toggleButton.Size = UDim2.new(0, 120, 0, 40)
+toggleButton.Size = UDim2.new(0, 160, 0, 40)
 toggleButton.Position = UDim2.new(0, 10, 0, 10)
-toggleButton.Text = "Open Item Explorer"
+toggleButton.Text = "Open World Explorer"
 toggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
 toggleButton.TextColor3 = Color3.new(1, 1, 1)
 toggleButton.Font = Enum.Font.SourceSansBold
@@ -31,8 +19,8 @@ toggleButton.TextSize = 18
 toggleButton.Parent = screenGui
 
 local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 400, 0, 350)
-mainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
+mainFrame.Size = UDim2.new(0, 500, 0, 400)
+mainFrame.Position = UDim2.new(0.5, -250, 0.5, -200)
 mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 mainFrame.BorderSizePixel = 2
 mainFrame.Visible = false
@@ -43,7 +31,7 @@ mainFrame.Parent = screenGui
 local titleBar = Instance.new("TextLabel")
 titleBar.Size = UDim2.new(1, 0, 0, 40)
 titleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-titleBar.Text = "Item Explorer"
+titleBar.Text = "World Explorer"
 titleBar.Font = Enum.Font.SourceSansBold
 titleBar.TextSize = 20
 titleBar.TextColor3 = Color3.new(1, 1, 1)
@@ -69,55 +57,64 @@ scrollFrame.ScrollBarThickness = 8
 scrollFrame.Parent = mainFrame
 
 local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Padding = UDim.new(0, 5)
-UIListLayout.SortOrder = Enum.SortOrder.Name
+UIListLayout.Padding = UDim.new(0, 4)
+UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 UIListLayout.Parent = scrollFrame
 
--- Update canvas size
+-- Updates scroll height
 local function updateCanvas()
 	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
 end
 UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
 
--- Create item buttons
-local function createItemButtons()
+-- Generates buttons for all objects in game
+local function listAllObjects()
 	scrollFrame:ClearAllChildren()
-	UIListLayout.Parent = scrollFrame -- Reparent
+	UIListLayout.Parent = scrollFrame -- reattach after clear
 
-	for _, tool in ipairs(findAllTools()) do
-		local toolButton = Instance.new("TextButton")
-		toolButton.Size = UDim2.new(1, -10, 0, 30)
-		toolButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
-		toolButton.TextColor3 = Color3.new(1, 1, 1)
-		toolButton.Font = Enum.Font.SourceSans
-		toolButton.TextSize = 16
-		toolButton.Text = tool:GetFullName()
-		toolButton.Parent = scrollFrame
+	local objects = game:GetDescendants()
+	table.sort(objects, function(a, b)
+		return a:GetFullName() < b:GetFullName()
+	end)
 
-		toolButton.MouseButton1Click:Connect(function()
-			local success, clonedTool = pcall(function()
-				return tool:Clone()
+	for _, obj in ipairs(objects) do
+		local name = obj:GetFullName()
+		local button = Instance.new("TextButton")
+		button.Size = UDim2.new(1, -10, 0, 28)
+		button.Text = name
+		button.TextColor3 = Color3.new(1, 1, 1)
+		button.Font = Enum.Font.Code
+		button.TextSize = 14
+		button.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+		button.Parent = scrollFrame
+
+		button.MouseButton1Click:Connect(function()
+			pcall(function()
+				local clone = obj:Clone()
+				clone.Name = obj.Name .. "_Copy"
+				clone.Parent = workspace
+				if clone:IsA("Model") and clone:FindFirstChild("PrimaryPart") then
+					clone:SetPrimaryPartCFrame(player.Character.HumanoidRootPart.CFrame + Vector3.new(5, 0, 0))
+				elseif clone:IsA("BasePart") then
+					clone.CFrame = player.Character.HumanoidRootPart.CFrame + Vector3.new(5, 0, 0)
+				end
 			end)
-
-			if success and clonedTool and clonedTool:IsA("Tool") then
-				clonedTool.Parent = player:WaitForChild("Backpack")
-			end
 		end)
 	end
 end
 
--- Open/Close logic
+-- Toggle GUI
 toggleButton.MouseButton1Click:Connect(function()
 	mainFrame.Visible = not mainFrame.Visible
 	if mainFrame.Visible then
-		toggleButton.Text = "Close Item Explorer"
-		createItemButtons()
+		toggleButton.Text = "Close World Explorer"
+		listAllObjects()
 	else
-		toggleButton.Text = "Open Item Explorer"
+		toggleButton.Text = "Open World Explorer"
 	end
 end)
 
 closeButton.MouseButton1Click:Connect(function()
 	mainFrame.Visible = false
-	toggleButton.Text = "Open Item Explorer"
+	toggleButton.Text = "Open World Explorer"
 end)
