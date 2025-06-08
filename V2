@@ -1,141 +1,82 @@
--- Advanced World Explorer GUI - Full LocalScript (Standalone)
-local Players = game:GetService("Players")
-local player = Players.LocalPlayer
-local RunService = game:GetService("RunService")
+-- ✅ FULL TOOL GIVER SYSTEM (PRIVATE SERVER TESTING ONLY)
 
--- GUI Setup
-local gui = Instance.new("ScreenGui")
-gui.Name = "WorldExplorer"
+local player = game:GetService("Players").LocalPlayer
+local replicatedStorage = game:GetService("ReplicatedStorage")
+local serverStorage = game:GetService("ServerStorage")
+
+-- Setup RemoteEvent (safe for multiple runs)
+local remote = replicatedStorage:FindFirstChild("GiveToolEvent")
+if not remote then
+    remote = Instance.new("RemoteEvent")
+    remote.Name = "GiveToolEvent"
+    remote.Parent = replicatedStorage
+end
+
+-- Setup tool folder (must be in ServerStorage)
+local toolFolder = serverStorage:FindFirstChild("Tools")
+if not toolFolder then
+    toolFolder = Instance.new("Folder")
+    toolFolder.Name = "Tools"
+    toolFolder.Parent = serverStorage
+end
+
+-- Make sure server handler exists only once
+if not _G.ToolHandlerSetup then
+    _G.ToolHandlerSetup = true
+
+    remote.OnServerEvent:Connect(function(plr, toolName)
+        local tool = toolFolder:FindFirstChild(toolName)
+        if tool and tool:IsA("Tool") then
+            local clone = tool:Clone()
+            clone.Parent = plr:WaitForChild("Backpack")
+        end
+    end)
+end
+
+-- ✅ GUI SETUP (Client-side)
+local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
+gui.Name = "ToolGrabberGui"
 gui.ResetOnSpawn = false
-gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
-gui.Parent = player:WaitForChild("PlayerGui")
 
--- Open/Close Button
-local toggle = Instance.new("TextButton")
-toggle.Size = UDim2.new(0, 180, 0, 40)
-toggle.Position = UDim2.new(0, 20, 0, 20)
-toggle.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
-toggle.TextColor3 = Color3.new(1, 1, 1)
-toggle.Font = Enum.Font.GothamBold
-toggle.TextSize = 16
-toggle.Text = "Open World Explorer"
-toggle.Parent = gui
-
--- Main Explorer Frame
-local explorer = Instance.new("Frame")
-explorer.Size = UDim2.new(0, 600, 0, 450)
-explorer.Position = UDim2.new(0.5, -300, 0.5, -225)
-explorer.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-explorer.Visible = false
-explorer.Active = true
-explorer.Draggable = true
-explorer.Parent = gui
-
--- Title Bar
-local title = Instance.new("TextLabel")
-title.Size = UDim2.new(1, 0, 0, 40)
-title.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+local title = Instance.new("TextLabel", gui)
+title.Text = "🧰 Get Server Tools"
+title.Size = UDim2.new(0, 300, 0, 40)
+title.Position = UDim2.new(0, 20, 0.1, 0)
+title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
-title.TextSize = 18
-title.Text = "World Explorer"
-title.Parent = explorer
+title.TextSize = 20
 
--- Close Button
-local closeBtn = Instance.new("TextButton")
-closeBtn.Size = UDim2.new(0, 35, 0, 35)
-closeBtn.Position = UDim2.new(1, -40, 0, 3)
-closeBtn.BackgroundColor3 = Color3.fromRGB(150, 0, 0)
-closeBtn.Text = "X"
-closeBtn.TextColor3 = Color3.new(1, 1, 1)
-closeBtn.Font = Enum.Font.GothamBold
-closeBtn.TextSize = 14
-closeBtn.Parent = explorer
+local frame = Instance.new("ScrollingFrame", gui)
+frame.Size = UDim2.new(0, 300, 0.6, 0)
+frame.Position = UDim2.new(0, 20, 0.1 + 40/1080, 0)
+frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.ScrollBarThickness = 6
 
--- Scrolling Frame for listing objects
-local scroll = Instance.new("ScrollingFrame")
-scroll.Size = UDim2.new(1, -20, 1, -60)
-scroll.Position = UDim2.new(0, 10, 0, 50)
-scroll.CanvasSize = UDim2.new(0, 0, 5, 0)
-scroll.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-scroll.ScrollBarThickness = 10
-scroll.BorderSizePixel = 0
-scroll.Parent = explorer
+local layout = Instance.new("UIListLayout", frame)
+layout.Padding = UDim.new(0, 4)
+layout.SortOrder = Enum.SortOrder.Name
 
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 6)
-layout.SortOrder = Enum.SortOrder.LayoutOrder
-layout.Parent = scroll
+-- Wait for server to populate Tools folder manually or externally
+task.wait(1)
 
-layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-	scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
-end)
+-- List tools
+for _, tool in ipairs(toolFolder:GetChildren()) do
+    if tool:IsA("Tool") then
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(1, -10, 0, 40)
+        button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        button.TextColor3 = Color3.new(1, 1, 1)
+        button.Font = Enum.Font.GothamBold
+        button.TextSize = 16
+        button.Text = "Get: " .. tool.Name
+        button.Parent = frame
 
--- Clone handler
-local function safeClone(obj)
-	local success, clone = pcall(function()
-		return obj:Clone()
-	end)
-	if success and clone then
-		clone.Name = obj.Name .. "_Clone"
-		clone.Parent = workspace
-
-		local rootPart = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-		if rootPart then
-			if clone:IsA("Model") and clone.PrimaryPart then
-				clone:SetPrimaryPartCFrame(rootPart.CFrame + Vector3.new(math.random(-10, 10), 0, math.random(-10, 10)))
-			elseif clone:IsA("BasePart") then
-				clone.CFrame = rootPart.CFrame + Vector3.new(math.random(-10, 10), 0, math.random(-10, 10))
-			end
-		end
-	end
+        button.MouseButton1Click:Connect(function()
+            remote:FireServer(tool.Name)
+            button.Text = "✅ Given: " .. tool.Name
+        end)
+    end
 end
 
--- Object button generator
-local function createButton(obj)
-	local btn = Instance.new("TextButton")
-	btn.Size = UDim2.new(1, -10, 0, 32)
-	btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
-	btn.TextColor3 = Color3.new(1, 1, 1)
-	btn.Text = obj:GetFullName()
-	btn.Font = Enum.Font.Code
-	btn.TextSize = 14
-	btn.TextXAlignment = Enum.TextXAlignment.Left
-	btn.AutoButtonColor = true
-	btn.Parent = scroll
-
-	btn.MouseButton1Click:Connect(function()
-		safeClone(obj)
-	end)
-end
-
--- Load all descendants and create buttons
-local function populate()
-	scroll:ClearAllChildren()
-	layout.Parent = scroll
-
-	local all = game:GetDescendants()
-	table.sort(all, function(a, b)
-		return a:GetFullName():lower() < b:GetFullName():lower()
-	end)
-
-	for _, obj in ipairs(all) do
-		createButton(obj)
-	end
-end
-
--- Toggle GUI
-toggle.MouseButton1Click:Connect(function()
-	explorer.Visible = not explorer.Visible
-	if explorer.Visible then
-		toggle.Text = "Close World Explorer"
-		populate()
-	else
-		toggle.Text = "Open World Explorer"
-	end
-end)
-
-closeBtn.MouseButton1Click:Connect(function()
-	explorer.Visible = false
-	toggle.Text = "Open World Explorer"
-end)
+frame.CanvasSize = UDim2.new(0, 0, 0, #frame:GetChildren() * 44)
