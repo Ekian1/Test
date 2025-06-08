@@ -1,65 +1,45 @@
--- ✅ FULL TOOL GIVER SYSTEM (CLIENT + SERVER IN ONE SCRIPT)
--- Only works in PRIVATE SERVER or when executor can run server-side
+-- ✅ FULL TOOL GIVER SYSTEM (PRIVATE SERVER TESTING ONLY)
 
 local player = game:GetService("Players").LocalPlayer
 local replicatedStorage = game:GetService("ReplicatedStorage")
+local serverStorage = game:GetService("ServerStorage")
 
--- 🧠 Check if server can be accessed
-local canRunServer = pcall(function()
-	return game:GetService("RunService"):IsServer()
-end)
-
--- 💡 SETUP REMOTE EVENT AND SERVER HANDLER
-if canRunServer then
-	-- Create RemoteEvent
-	local remote = Instance.new("RemoteEvent")
-	remote.Name = "GiveToolEvent"
-	remote.Parent = replicatedStorage
-
-	-- Create Tool Folder in ServerStorage (if doesn't exist)
-	local toolFolder = game:GetService("ServerStorage"):FindFirstChild("Tools")
-	if not toolFolder then
-		toolFolder = Instance.new("Folder")
-		toolFolder.Name = "Tools"
-		toolFolder.Parent = game:GetService("ServerStorage")
-	end
-
-	-- Sample Tools (for demo only — add real tools in Studio or via executor)
-	local function createSampleTool(name)
-		local tool = Instance.new("Tool")
-		tool.Name = name
-		tool.RequiresHandle = false
-		tool.CanBeDropped = true
-		local scriptInside = Instance.new("Script")
-		scriptInside.Source = [[print("Tool activated:", script.Parent.Name)]]
-		scriptInside.Parent = tool
-		tool.Parent = toolFolder
-	end
-
-	if #toolFolder:GetChildren() == 0 then
-		createSampleTool("LaserGun")
-		createSampleTool("GravityStick")
-		createSampleTool("SwordOfDoom")
-	end
-
-	-- Give tool handler
-	remote.OnServerEvent:Connect(function(player, toolName)
-		local tool = toolFolder:FindFirstChild(toolName)
-		if tool then
-			local clone = tool:Clone()
-			clone.Parent = player:FindFirstChild("Backpack") or player:WaitForChild("Backpack")
-		end
-	end)
+-- Setup RemoteEvent (safe for multiple runs)
+local remote = replicatedStorage:FindFirstChild("GiveToolEvent")
+if not remote then
+    remote = Instance.new("RemoteEvent")
+    remote.Name = "GiveToolEvent"
+    remote.Parent = replicatedStorage
 end
 
--- ✅ GUI CODE (CLIENT SIDE)
--- Create GUI to request tools
+-- Setup tool folder (must be in ServerStorage)
+local toolFolder = serverStorage:FindFirstChild("Tools")
+if not toolFolder then
+    toolFolder = Instance.new("Folder")
+    toolFolder.Name = "Tools"
+    toolFolder.Parent = serverStorage
+end
+
+-- Make sure server handler exists only once
+if not _G.ToolHandlerSetup then
+    _G.ToolHandlerSetup = true
+
+    remote.OnServerEvent:Connect(function(plr, toolName)
+        local tool = toolFolder:FindFirstChild(toolName)
+        if tool and tool:IsA("Tool") then
+            local clone = tool:Clone()
+            clone.Parent = plr:WaitForChild("Backpack")
+        end
+    end)
+end
+
+-- ✅ GUI SETUP (Client-side)
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.Name = "ToolRequestGui"
+gui.Name = "ToolGrabberGui"
 gui.ResetOnSpawn = false
 
 local title = Instance.new("TextLabel", gui)
-title.Text = "🧰 Server Tools"
+title.Text = "🧰 Get Server Tools"
 title.Size = UDim2.new(0, 300, 0, 40)
 title.Position = UDim2.new(0, 20, 0.1, 0)
 title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
@@ -77,35 +57,26 @@ local layout = Instance.new("UIListLayout", frame)
 layout.Padding = UDim.new(0, 4)
 layout.SortOrder = Enum.SortOrder.Name
 
--- Wait for RemoteEvent
-local remoteEvent = replicatedStorage:WaitForChild("GiveToolEvent", 10)
-if not remoteEvent then
-	error("GiveToolEvent not found. Make sure script can run on server.")
-end
+-- Wait for server to populate Tools folder manually or externally
+task.wait(1)
 
--- Get tool list from ServerStorage.Tools
-local toolFolder = game:GetService("ServerStorage"):FindFirstChild("Tools")
-if not toolFolder then
-	error("ServerStorage.Tools folder not found.")
-end
-
+-- List tools
 for _, tool in ipairs(toolFolder:GetChildren()) do
-	if tool:IsA("Tool") then
-		local button = Instance.new("TextButton")
-		button.Size = UDim2.new(1, -10, 0, 40)
-		button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-		button.TextColor3 = Color3.new(1,1,1)
-		button.Font = Enum.Font.GothamBold
-		button.TextSize = 16
-		button.Text = "Get: " .. tool.Name
-		button.Parent = frame
+    if tool:IsA("Tool") then
+        local button = Instance.new("TextButton")
+        button.Size = UDim2.new(1, -10, 0, 40)
+        button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+        button.TextColor3 = Color3.new(1, 1, 1)
+        button.Font = Enum.Font.GothamBold
+        button.TextSize = 16
+        button.Text = "Get: " .. tool.Name
+        button.Parent = frame
 
-		button.MouseButton1Click:Connect(function()
-			remoteEvent:FireServer(tool.Name)
-			button.Text = "✅ Given: " .. tool.Name
-		end)
-	end
+        button.MouseButton1Click:Connect(function()
+            remote:FireServer(tool.Name)
+            button.Text = "✅ Given: " .. tool.Name
+        end)
+    end
 end
 
 frame.CanvasSize = UDim2.new(0, 0, 0, #frame:GetChildren() * 44)
-
