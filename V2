@@ -1,82 +1,81 @@
--- ✅ FULL TOOL GIVER SYSTEM (PRIVATE SERVER TESTING ONLY)
-
+-- ✅ CONFIG
 local player = game:GetService("Players").LocalPlayer
-local replicatedStorage = game:GetService("ReplicatedStorage")
-local serverStorage = game:GetService("ServerStorage")
+local backpack = player:WaitForChild("Backpack")
 
--- Setup RemoteEvent (safe for multiple runs)
-local remote = replicatedStorage:FindFirstChild("GiveToolEvent")
-if not remote then
-    remote = Instance.new("RemoteEvent")
-    remote.Name = "GiveToolEvent"
-    remote.Parent = replicatedStorage
-end
-
--- Setup tool folder (must be in ServerStorage)
-local toolFolder = serverStorage:FindFirstChild("Tools")
-if not toolFolder then
-    toolFolder = Instance.new("Folder")
-    toolFolder.Name = "Tools"
-    toolFolder.Parent = serverStorage
-end
-
--- Make sure server handler exists only once
-if not _G.ToolHandlerSetup then
-    _G.ToolHandlerSetup = true
-
-    remote.OnServerEvent:Connect(function(plr, toolName)
-        local tool = toolFolder:FindFirstChild(toolName)
-        if tool and tool:IsA("Tool") then
-            local clone = tool:Clone()
-            clone.Parent = plr:WaitForChild("Backpack")
-        end
-    end)
-end
-
--- ✅ GUI SETUP (Client-side)
+-- ✅ Create ScreenGui
 local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.Name = "ToolGrabberGui"
+gui.Name = "UniversalItemGrabber"
 gui.ResetOnSpawn = false
 
-local title = Instance.new("TextLabel", gui)
-title.Text = "🧰 Get Server Tools"
-title.Size = UDim2.new(0, 300, 0, 40)
-title.Position = UDim2.new(0, 20, 0.1, 0)
-title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-title.TextColor3 = Color3.new(1, 1, 1)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 20
-
+-- ✅ Main Frame
 local frame = Instance.new("ScrollingFrame", gui)
 frame.Size = UDim2.new(0, 300, 0.6, 0)
-frame.Position = UDim2.new(0, 20, 0.1 + 40/1080, 0)
+frame.Position = UDim2.new(0, 20, 0.2, 0)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+frame.BorderSizePixel = 0
 frame.ScrollBarThickness = 6
+frame.CanvasSize = UDim2.new(0, 0, 0, 0)
 
 local layout = Instance.new("UIListLayout", frame)
 layout.Padding = UDim.new(0, 4)
 layout.SortOrder = Enum.SortOrder.Name
 
--- Wait for server to populate Tools folder manually or externally
-task.wait(1)
+-- ✅ Title
+local title = Instance.new("TextLabel", gui)
+title.Text = "Universal Item Grabber"
+title.Size = UDim2.new(0, 300, 0, 40)
+title.Position = UDim2.new(0, 20, 0.15, 0)
+title.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.Font = Enum.Font.GothamBold
+title.TextSize = 20
+title.BorderSizePixel = 0
 
--- List tools
-for _, tool in ipairs(toolFolder:GetChildren()) do
-    if tool:IsA("Tool") then
-        local button = Instance.new("TextButton")
-        button.Size = UDim2.new(1, -10, 0, 40)
-        button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-        button.TextColor3 = Color3.new(1, 1, 1)
-        button.Font = Enum.Font.GothamBold
-        button.TextSize = 16
-        button.Text = "Get: " .. tool.Name
-        button.Parent = frame
+-- ✅ Scan all services for tools
+local function findAllTools()
+	local allTools = {}
 
-        button.MouseButton1Click:Connect(function()
-            remote:FireServer(tool.Name)
-            button.Text = "✅ Given: " .. tool.Name
-        end)
-    end
+	for _, service in ipairs(game:GetChildren()) do
+		pcall(function()
+			for _, obj in ipairs(service:GetDescendants()) do
+				if obj:IsA("Tool") and not allTools[obj] then
+					allTools[obj] = true
+				end
+			end
+		end)
+	end
+
+	return allTools
 end
 
-frame.CanvasSize = UDim2.new(0, 0, 0, #frame:GetChildren() * 44)
+-- ✅ Create tool buttons
+local function createToolButton(tool)
+	local button = Instance.new("TextButton")
+	button.Size = UDim2.new(1, -10, 0, 40)
+	button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+	button.TextColor3 = Color3.new(1,1,1)
+	button.Font = Enum.Font.SourceSansBold
+	button.TextSize = 18
+	button.Text = "➕ " .. tool:GetFullName()
+	button.Parent = frame
+
+	button.MouseButton1Click:Connect(function()
+		local success, clone = pcall(function()
+			return tool:Clone()
+		end)
+		if success and clone then
+			clone.Parent = backpack
+			button.Text = "✅ " .. tool.Name .. " added!"
+		else
+			button.Text = "❌ Failed to clone " .. tool.Name
+		end
+	end)
+end
+
+-- ✅ Populate GUI
+local foundTools = findAllTools()
+for tool in pairs(foundTools) do
+	createToolButton(tool)
+end
+
+frame.CanvasSize = UDim2.new(0, 0, 0, (#frame:GetChildren()) * 44)
