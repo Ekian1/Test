@@ -1,81 +1,81 @@
--- ✅ CONFIG
+-- Xeno Exclusive - Chaos Wind Shockwave Script
+-- For educational use in PRIVATE games only
+
 local player = game:GetService("Players").LocalPlayer
-local backpack = player:WaitForChild("Backpack")
+local debris = game:GetService("Debris")
+local runService = game:GetService("RunService")
+local radius = 25
+local power = 2500
+local cooldown = 10
 
--- ✅ Create ScreenGui
-local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.Name = "UniversalItemGrabber"
-gui.ResetOnSpawn = false
+-- Shockwave Visual
+local function createShockwave(position)
+    local shock = Instance.new("Part")
+    shock.Size = Vector3.new(1, 1, 1)
+    shock.Shape = Enum.PartType.Ball
+    shock.Material = Enum.Material.Neon
+    shock.Color = Color3.fromRGB(0, 200, 255)
+    shock.Anchored = true
+    shock.CanCollide = false
+    shock.CFrame = CFrame.new(position)
+    shock.Transparency = 0.5
+    shock.Parent = workspace
 
--- ✅ Main Frame
-local frame = Instance.new("ScrollingFrame", gui)
-frame.Size = UDim2.new(0, 300, 0.6, 0)
-frame.Position = UDim2.new(0, 20, 0.2, 0)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.BorderSizePixel = 0
-frame.ScrollBarThickness = 6
-frame.CanvasSize = UDim2.new(0, 0, 0, 0)
-
-local layout = Instance.new("UIListLayout", frame)
-layout.Padding = UDim.new(0, 4)
-layout.SortOrder = Enum.SortOrder.Name
-
--- ✅ Title
-local title = Instance.new("TextLabel", gui)
-title.Text = "Universal Item Grabber"
-title.Size = UDim2.new(0, 300, 0, 40)
-title.Position = UDim2.new(0, 20, 0.15, 0)
-title.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
-title.TextColor3 = Color3.fromRGB(255, 255, 255)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 20
-title.BorderSizePixel = 0
-
--- ✅ Scan all services for tools
-local function findAllTools()
-	local allTools = {}
-
-	for _, service in ipairs(game:GetChildren()) do
-		pcall(function()
-			for _, obj in ipairs(service:GetDescendants()) do
-				if obj:IsA("Tool") and not allTools[obj] then
-					allTools[obj] = true
-				end
-			end
-		end)
-	end
-
-	return allTools
+    local tweenInfo = TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+    local tween = game:GetService("TweenService"):Create(shock, tweenInfo, {
+        Size = Vector3.new(radius * 2, radius * 2, radius * 2),
+        Transparency = 1
+    })
+    tween:Play()
+    debris:AddItem(shock, 1)
 end
 
--- ✅ Create tool buttons
-local function createToolButton(tool)
-	local button = Instance.new("TextButton")
-	button.Size = UDim2.new(1, -10, 0, 40)
-	button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-	button.TextColor3 = Color3.new(1,1,1)
-	button.Font = Enum.Font.SourceSansBold
-	button.TextSize = 18
-	button.Text = "➕ " .. tool:GetFullName()
-	button.Parent = frame
-
-	button.MouseButton1Click:Connect(function()
-		local success, clone = pcall(function()
-			return tool:Clone()
-		end)
-		if success and clone then
-			clone.Parent = backpack
-			button.Text = "✅ " .. tool.Name .. " added!"
-		else
-			button.Text = "❌ Failed to clone " .. tool.Name
-		end
-	end)
+-- Sound FX
+local function playBoom(position)
+    local sound = Instance.new("Sound")
+    sound.SoundId = "rbxassetid://138186576" -- thunder boom
+    sound.Volume = 2
+    sound.PlayOnRemove = true
+    sound.Parent = workspace
+    sound.Position = position
+    sound:Destroy()
 end
 
--- ✅ Populate GUI
-local foundTools = findAllTools()
-for tool in pairs(foundTools) do
-	createToolButton(tool)
+-- Chaos Wind Shockwave
+local function fireShockwave()
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local pos = char.HumanoidRootPart.Position
+    local hitParts = 0
+
+    createShockwave(pos)
+    playBoom(pos)
+
+    for _, obj in ipairs(workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and obj:IsDescendantOf(char) == false then
+            local distance = (obj.Position - pos).Magnitude
+            if distance <= radius then
+                if obj.Anchored then
+                    -- Spin anchored parts
+                    obj.Orientation += Vector3.new(0, math.random(-180, 180), 0)
+                else
+                    -- Push unanchored parts and players
+                    local bv = Instance.new("BodyVelocity")
+                    bv.Velocity = (obj.Position - pos).Unit * power
+                    bv.MaxForce = Vector3.new(1, 1, 1) * 1e6
+                    bv.Parent = obj
+                    debris:AddItem(bv, 0.25)
+                end
+                hitParts += 1
+            end
+        end
+    end
+
+    print("🌪 Chaos Wind triggered! Affected:", hitParts, "parts.")
 end
 
-frame.CanvasSize = UDim2.new(0, 0, 0, (#frame:GetChildren()) * 44)
+-- Auto Loop Every X Seconds
+while true do
+    fireShockwave()
+    wait(cooldown)
+end
