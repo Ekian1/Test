@@ -1,12 +1,10 @@
--- ONE SCRIPT: SEARCH ALL TOOLS IN GAME & GIVE ON CLICK (PRIVATE SERVER ONLY)
+-- FULL ALL-IN-ONE SCRIPT: SEARCH ALL TOOLS IN GAME + GIVE ON CLICK
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local RunService = game:GetService("RunService")
 
-local player = Players.LocalPlayer
-
--- SERVER PART: Create RemoteEvent and handle giving tools
+-- Server part
 if RunService:IsServer() then
     -- Create RemoteEvent if missing
     local remote = ReplicatedStorage:FindFirstChild("GiveToolEvent")
@@ -16,12 +14,12 @@ if RunService:IsServer() then
         remote.Parent = ReplicatedStorage
     end
 
-    -- Scan all tools in the game (anywhere)
+    -- Scan all tools in game (descendants)
     local function getAllTools()
         local tools = {}
         for _, obj in ipairs(game:GetDescendants()) do
             if obj:IsA("Tool") then
-                -- Store tool by name (only first found)
+                -- Store first found tool by name only
                 if not tools[obj.Name] then
                     tools[obj.Name] = obj
                 end
@@ -32,33 +30,34 @@ if RunService:IsServer() then
 
     local toolsMap = getAllTools()
 
-    remote.OnServerEvent:Connect(function(plr, toolName)
+    -- Listen for tool requests from clients
+    remote.OnServerEvent:Connect(function(player, toolName)
         local tool = toolsMap[toolName]
         if tool and tool:IsA("Tool") then
             local clone = tool:Clone()
-            clone.Parent = plr:WaitForChild("Backpack")
+            clone.Parent = player:WaitForChild("Backpack")
         end
     end)
 
     return
 end
 
--- CLIENT PART
-
+-- Client part
+local player = Players.LocalPlayer
 local remote = ReplicatedStorage:WaitForChild("GiveToolEvent")
 
--- Ask server to scan all tools by making a local copy (we scan client side as well)
+-- Client scans all tool names locally to show buttons
 local function getAllToolNames()
-    local toolNames = {}
-    local found = {}
+    local names = {}
+    local seen = {}
     for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("Tool") and not found[obj.Name] then
-            found[obj.Name] = true
-            table.insert(toolNames, obj.Name)
+        if obj:IsA("Tool") and not seen[obj.Name] then
+            seen[obj.Name] = true
+            table.insert(names, obj.Name)
         end
     end
-    table.sort(toolNames)
-    return toolNames
+    table.sort(names)
+    return names
 end
 
 local toolNames = getAllToolNames()
@@ -90,7 +89,7 @@ layout.Padding = UDim.new(0, 4)
 layout.SortOrder = Enum.SortOrder.Name
 layout.Parent = frame
 
--- Add buttons for each tool name
+-- Add a button for each tool name
 for _, name in ipairs(toolNames) do
     local button = Instance.new("TextButton")
     button.Size = UDim2.new(1, -10, 0, 40)
@@ -107,5 +106,5 @@ for _, name in ipairs(toolNames) do
     end)
 end
 
--- Adjust canvas size to fit buttons
+-- Set canvas size to fit buttons
 frame.CanvasSize = UDim2.new(0, 0, 0, #frame:GetChildren() * 44)
