@@ -1,121 +1,382 @@
--- Phantom Phase OP Script by ChatGPT (For Private Use Only)
+--[[
+	// Advanced Environmental Aura System //
+	
+	Description:
+	This single script creates a dynamic, game-wide system that spawns temporary "auras" in random
+	locations across the map. Each aura has a unique visual appearance, sound, and gameplay effect
+	that is applied to any player who enters its zone of influence. The system is highly configurable,
+	allowing you to easily define new types of auras with different effects.
+
+	Features:
+	- Modular and organized code structure.
+	- Data-driven design: Aura behaviors are defined in a configuration table, not hard-coded.
+	- Dynamic spawning and cleanup: Auras appear and disappear automatically over time.
+	- State management: Correctly applies and removes effects as players enter/leave auras.
+	- Visual & Audio Feedback: Each aura has customizable particles, colors, and sounds.
+	- Efficient player detection within aura zones.
+
+	Location:
+	This script should be placed in `ServerScriptService`.
+]]
+
+--================================--
+--// SERVICES
+--================================--
 local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local ServerScriptService = game:GetService("ServerScriptService")
 local RunService = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
-local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
-local Camera = workspace.CurrentCamera
+local Debris = game:GetService("Debris")
+local Teams = game:GetService("Teams")
 
--- Phantom Settings
-local flying = false
-local phasing = false
-local espEnabled = false
-local espConnections = {}
-local phantomPart = nil
+--================================--
+--// CONFIGURATION
+--================================--
+-- This is where you define all the different types of auras.
+-- You can add new auras just by adding a new entry to this table.
+local AURA_CONFIGS = {
+	["Sanctuary"] = {
+		Name = "Sanctuary",
+		Duration = 60, -- seconds
+		EffectRadius = 25, -- studs
+		Color = Color3.fromRGB(75, 255, 125),
+		Transparency = 0.7,
+		ParticleEffect = {
+			Enabled = true,
+			Rate = 50,
+			Color = ColorSequence.new(Color3.fromRGB(170, 255, 170)),
+			Size = NumberSequence.new(0.5, 1.2),
+			Speed = NumberRange.new(1, 2),
+		},
+		Sound = {
+			Enabled = true,
+			SoundId = "rbxassetid://1843360492", -- Gentle choir/healing sound
+			Volume = 0.3,
+			Looped = true,
+		},
+		Effect = function(character, insideAura)
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				-- Heal the player every second they are inside
+				humanoid.Health = math.min(humanoid.MaxHealth, humanoid.Health + (10 / 60)) -- Heal 10 health per second
+			end
+		end,
+		OnEnterMessage = "You have entered a Sanctuary Aura. You feel rejuvenated.",
+		OnLeaveMessage = "You have left the Sanctuary Aura.",
+	},
+	["Noxious"] = {
+		Name = "Noxious Field",
+		Duration = 45,
+		EffectRadius = 30,
+		Color = Color3.fromRGB(170, 0, 255),
+		Transparency = 0.6,
+		ParticleEffect = {
+			Enabled = true,
+			Rate = 100,
+			Color = ColorSequence.new(Color3.fromRGB(100, 20, 150)),
+			Size = NumberSequence.new(1, 2),
+			Speed = NumberRange.new(0.5, 1),
+			Shape = Enum.ParticleEmitterShape.Box,
+			Acceleration = Vector3.new(0, -2, 0),
+		},
+		Sound = {
+			Enabled = true,
+			SoundId = "rbxassetid://130635443", -- Toxic waste sound
+			Volume = 0.4,
+			Looped = true,
+		},
+		Effect = function(character, insideAura)
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				-- Damage the player every second they are inside
+				humanoid:TakeDamage(5 / 60) -- 5 damage per second
+			end
+		end,
+		OnEnterMessage = "You've entered a Noxious Field. The air burns!",
+		OnLeaveMessage = "You have escaped the Noxious Field.",
+	},
+	["Haste"] = {
+		Name = "Field of Haste",
+		Duration = 30,
+		EffectRadius = 20,
+		Color = Color3.fromRGB(255, 255, 0),
+		Transparency = 0.8,
+		ParticleEffect = {
+			Enabled = true,
+			Rate = 75,
+			Color = ColorSequence.new(Color3.fromRGB(255, 255, 150)),
+			Size = NumberSequence.new(0.2, 0.5),
+			Speed = NumberRange.new(10, 15),
+			Lifetime = NumberRange.new(0.5, 1),
+			SpreadAngle = Vector2.new(360, 360),
+		},
+		Sound = {
+			Enabled = true,
+			SoundId = "rbxassetid://1838013322", -- Whooshing air sound
+			Volume = 0.25,
+			Looped = true,
+		},
+		OnApply = function(character)
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = 32 -- Default is 16
+			end
+		end,
+		OnRemove = function(character)
+			local humanoid = character:FindFirstChildOfClass("Humanoid")
+			if humanoid then
+				humanoid.WalkSpeed = 16 -- Reset to default
+			end
+		end,
+		OnEnterMessage = "A Field of Haste speeds up your movement!",
+		OnLeaveMessage = "Your speed returns to normal.",
+	},
+}
 
--- Keybinds
-local UserInputService = game:GetService("UserInputService")
+-- System settings
+local MIN_SPAWN_TIME = 20 -- Minimum seconds between aura spawns
+local MAX_SPAWN_TIME = 40 -- Maximum seconds between aura spawns
+local MAX_AURAS = 5 -- The maximum number of auras allowed at once
 
--- ESP FUNCTION
-local function createESP(plr)
-	if plr == LocalPlayer then return end
-	local box = Drawing.new("Text")
-	box.Text = plr.Name
-	box.Color = Color3.fromRGB(0,255,0)
-	box.Size = 14
-	box.Center = true
-	box.Outline = true
-	box.Visible = true
+--================================--
+--// AURA MANAGER MODULE
+--================================--
+local AuraManager = {}
+AuraManager.__index = AuraManager
+AuraManager.ActiveAuras = {} -- Stores data for all active auras
+AuraManager.PlayerStates = {} -- Tracks which players are in which auras
 
-	local conn
-	conn = RunService.RenderStepped:Connect(function()
-		if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then box.Visible = false return end
-		local pos, onScreen = Camera:WorldToViewportPoint(plr.Character.HumanoidRootPart.Position)
-		box.Position = Vector2.new(pos.X, pos.Y - 20)
-		box.Visible = onScreen and espEnabled
+-- Function to find a valid spawn position on the map
+function AuraManager:GetRandomSpawnPosition()
+	local map = Workspace:FindFirstChild("Map") -- Assumes your map parts are in a model named "Map"
+	if not map then
+		warn("AuraManager: Cannot find a model named 'Map' in Workspace. Spawning at origin.")
+		return Vector3.new(0, 5, 0)
+	end
+
+	local mapBounds = map:GetBoundingBox()
+	local raycastParams = RaycastParams.new()
+	raycastParams.FilterType = Enum.RaycastFilterType.Include
+	raycastParams.FilterDescendantsInstances = {map}
+
+	for i = 1, 10 do -- Try 10 times to find a good spot
+		local randomX = math.random(mapBounds.Position.X - mapBounds.Size.X/2, mapBounds.Position.X + mapBounds.Size.X/2)
+		local randomZ = math.random(mapBounds.Position.Z - mapBounds.Size.Z/2, mapBounds.Position.Z + mapBounds.Size.Z/2)
+		local origin = Vector3.new(randomX, mapBounds.Position.Y + mapBounds.Size.Y, randomZ)
+		
+		local result = Workspace:Raycast(origin, Vector3.new(0, -1000, 0), raycastParams)
+		if result and result.Position then
+			return result.Position + Vector3.new(0, 2, 0)
+		end
+	end
+	
+	-- Fallback if no position found
+	return mapBounds.Position + Vector3.new(0, 5, 0)
+end
+
+
+-- Function to create a new aura instance
+function AuraManager:CreateAura(configName)
+	local config = AURA_CONFIGS[configName]
+	if not config then
+		warn("AuraManager: Attempted to create an aura with an invalid config name:", configName)
+		return
+	end
+
+	local position = self:GetRandomSpawnPosition()
+	print("AuraManager: Spawning '" .. config.Name .. "' at " .. tostring(position))
+
+	-- Main aura part
+	local auraPart = Instance.new("Part")
+	auraPart.Name = config.Name
+	auraPart.Anchored = true
+	auraPart.CanCollide = false
+	auraPart.CanQuery = false
+	auraPart.CanTouch = false
+	auraPart.CastShadow = false
+	auraPart.Shape = Enum.PartType.Ball
+	auraPart.Size = Vector3.new(config.EffectRadius * 2, config.EffectRadius * 2, config.EffectRadius * 2)
+	auraPart.Position = position
+	auraPart.Color = config.Color
+	auraPart.Material = Enum.Material.ForceField
+	auraPart.Transparency = config.Transparency
+	auraPart.Parent = Workspace
+
+	local auraId = HttpService:GenerateGUID(false)
+	auraPart:SetAttribute("AuraID", auraId)
+
+	local auraData = {
+		id = auraId,
+		part = auraPart,
+		config = config,
+		spawnTime = os.time(),
+		playersInside = {},
+	}
+
+	-- Add particle effect
+	if config.ParticleEffect and config.ParticleEffect.Enabled then
+		local pe = Instance.new("ParticleEmitter")
+		for property, value in pairs(config.ParticleEffect) do
+			if property ~= "Enabled" then
+				pe[property] = value
+			end
+		end
+		pe.Parent = auraPart
+	end
+
+	-- Add sound
+	if config.Sound and config.Sound.Enabled then
+		local sound = Instance.new("Sound")
+		sound.SoundId = config.Sound.SoundId
+		sound.Volume = config.Sound.Volume
+		sound.Looped = config.Sound.Looped
+		sound.RollOffMaxDistance = config.EffectRadius * 3
+		sound.RollOffMinDistance = config.EffectRadius * 0.5
+		sound.Parent = auraPart
+		sound:Play()
+	end
+
+	-- Add to active list and schedule for destruction
+	self.ActiveAuras[auraId] = auraData
+	Debris:AddItem(auraPart, config.Duration)
+	
+	-- After duration, remove from active list
+	task.delay(config.Duration, function()
+		if self.ActiveAuras[auraId] then
+			print("AuraManager: '" .. config.Name .. "' has expired.")
+			self.ActiveAuras[auraId] = nil
+		end
 	end)
-
-	table.insert(espConnections, {Drawing=box, Connection=conn})
 end
 
-local function toggleESP()
-	espEnabled = not espEnabled
-	if espEnabled then
-		for _, plr in pairs(Players:GetPlayers()) do
-			createESP(plr)
-		end
-	else
-		for _, v in pairs(espConnections) do
-			v.Connection:Disconnect()
-			v.Drawing:Remove()
-		end
-		espConnections = {}
-	end
+-- Function to send a notification to a player
+function AuraManager:NotifyPlayer(player, message)
+	-- For a real game, you would use a RemoteEvent to show a custom UI notification.
+	-- For this example, we'll use a simple system message.
+	local starterGui = game:GetService("StarterGui")
+	starterGui:SetCore("SendNotification", {
+		Title = "Aura System",
+		Text = message,
+		Duration = 5,
+	})
 end
 
--- PHANTOM MODE
-local function togglePhantom()
-	phasing = not phasing
-	flying = phasing
-	local root = Character:WaitForChild("HumanoidRootPart")
-	local humanoid = Character:FindFirstChildOfClass("Humanoid")
+-- This is the core update loop, run every frame by the server
+function AuraManager:Update()
+	local allPlayers = Players:GetPlayers()
+	local playersToRemoveFromStates = {}
 
-	if phasing then
-		for _, v in ipairs(Character:GetDescendants()) do
-			if v:IsA("BasePart") then v.CanCollide = false end
+	-- Initialize player states for players who are present
+	for _, player in ipairs(allPlayers) do
+		if not self.PlayerStates[player] then
+			self.PlayerStates[player] = { inAura = nil }
 		end
-		if humanoid then humanoid:ChangeState(11) end
-		phantomPart = Instance.new("BodyVelocity")
-		phantomPart.Velocity = Vector3.zero
-		phantomPart.MaxForce = Vector3.new(1,1,1) * 1e9
-		phantomPart.Parent = root
-	else
-		if phantomPart then phantomPart:Destroy() end
 	end
-end
-
--- FLIGHT LOGIC
-RunService.RenderStepped:Connect(function()
-	if flying and phantomPart then
-		local dir = Vector3.new()
-		if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + Camera.CFrame.LookVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - Camera.CFrame.LookVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - Camera.CFrame.RightVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + Camera.CFrame.RightVector end
-		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
-		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.new(0,1,0) end
-		phantomPart.Velocity = dir.Unit * 100
+	
+	-- Check which players are no longer in the game and mark for cleanup
+	for player, _ in pairs(self.PlayerStates) do
+		if not player.Parent then
+			table.insert(playersToRemoveFromStates, player)
+		end
 	end
-end)
+	-- Cleanup disconnected player states
+	for _, player in ipairs(playersToRemoveFromStates) do
+		self.PlayerStates[player] = nil
+	end
 
--- FLING FUNCTION
-local function flingNearby()
-	for _, plr in pairs(Players:GetPlayers()) do
-		if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
-			local targetHRP = plr.Character.HumanoidRootPart
-			local myHRP = Character:FindFirstChild("HumanoidRootPart")
-			if (myHRP.Position - targetHRP.Position).Magnitude < 10 then
-				local bv = Instance.new("BodyVelocity", targetHRP)
-				bv.Velocity = Vector3.new(math.random(-400,400), 400, math.random(-400,400))
-				bv.MaxForce = Vector3.new(1,1,1) * 1e6
-				game.Debris:AddItem(bv, 0.2)
+	-- Main loop to check player positions against auras
+	for player, state in pairs(self.PlayerStates) do
+		local character = player.Character
+		if not character or not character:FindFirstChild("HumanoidRootPart") then
+			continue
+		end
+
+		local playerPosition = character.HumanoidRootPart.Position
+		local currentlyInAuraId = nil
+
+		-- Find which aura (if any) the player is in
+		for auraId, auraData in pairs(self.ActiveAuras) do
+			local distance = (playerPosition - auraData.part.Position).Magnitude
+			if distance <= auraData.config.EffectRadius then
+				currentlyInAuraId = auraId
+				break -- Player can only be in one aura at a time
+			end
+		end
+
+		local previousAuraId = state.inAura
+
+		if currentlyInAuraId ~= previousAuraId then
+			-- Player has changed aura state (entered a new one or left an old one)
+			
+			-- Handle leaving the previous aura
+			if previousAuraId and self.ActiveAuras[previousAuraId] then
+				local oldAuraData = self.ActiveAuras[previousAuraId]
+				if oldAuraData.config.OnRemove then
+					oldAuraData.config.OnRemove(character)
+				end
+				if oldAuraData.config.OnLeaveMessage then
+					self:NotifyPlayer(player, oldAuraData.config.OnLeaveMessage)
+				end
+			end
+
+			-- Handle entering the new aura
+			if currentlyInAuraId then
+				local newAuraData = self.ActiveAuras[currentlyInAuraId]
+				if newAuraData.config.OnApply then
+					newAuraData.config.OnApply(character)
+				end
+				if newAuraData.config.OnEnterMessage then
+					self:NotifyPlayer(player, newAuraData.config.OnEnterMessage)
+				end
+			end
+			
+			-- Update the player's state
+			state.inAura = currentlyInAuraId
+		end
+		
+		-- Apply continuous effects if inside an aura
+		if state.inAura and self.ActiveAuras[state.inAura] then
+			local auraData = self.ActiveAuras[state.inAura]
+			if auraData.config.Effect then
+				auraData.config.Effect(character, true)
 			end
 		end
 	end
 end
 
--- INPUT HANDLER
-UserInputService.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
-	if input.KeyCode == Enum.KeyCode.E then
-		togglePhantom()
-	elseif input.KeyCode == Enum.KeyCode.T then
-		toggleESP()
-	elseif input.KeyCode == Enum.KeyCode.R then
-		flingNearby()
-	end
-end)
 
--- Auto ESP Update
-Players.PlayerAdded:Connect(function(p)
-	if espEnabled then task.wait(1) createESP(p) end
-end)
+-- Function to start the aura spawning loop
+function AuraManager:Start()
+	print("AuraManager: System started. Awaiting first spawn...")
+
+	-- Connect the main update loop to the server's heartbeat
+	RunService.Heartbeat:Connect(function()
+		self:Update()
+	end)
+
+	-- Start the spawner loop
+	task.spawn(function()
+		while true do
+			local sleepTime = math.random(MIN_SPAWN_TIME, MAX_SPAWN_TIME)
+			task.wait(sleepTime)
+
+			if #self.ActiveAuras < MAX_AURAS then
+				-- Pick a random aura type from the config table
+				local auraNames = {}
+				for name, _ in pairs(AURA_CONFIGS) do
+					table.insert(auraNames, name)
+				end
+				
+				if #auraNames > 0 then
+					local randomAuraName = auraNames[math.random(1, #auraNames)]
+					self:CreateAura(randomAuraName)
+				end
+			end
+		end
+	end)
+end
+
+--================================--
+--// INITIALIZATION
+--================================--
+AuraManager:Start()
