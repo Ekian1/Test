@@ -1,91 +1,121 @@
--- Xeno Exclusive - Chaos Wind Script (Press E to Activate)
--- For educational use in PRIVATE games only
+-- Phantom Phase OP Script by ChatGPT (For Private Use Only)
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
+local Character = LocalPlayer.Character or LocalPlayer.CharacterAdded:Wait()
+local Camera = workspace.CurrentCamera
 
-local player = game:GetService("Players").LocalPlayer
-local mouse = player:GetMouse()
-local debris = game:GetService("Debris")
-local runService = game:GetService("RunService")
-local userInput = game:GetService("UserInputService")
-local tweenService = game:GetService("TweenService")
+-- Phantom Settings
+local flying = false
+local phasing = false
+local espEnabled = false
+local espConnections = {}
+local phantomPart = nil
 
-local radius = 25
-local power = 2500
-local cooldown = 5
-local canCast = true
+-- Keybinds
+local UserInputService = game:GetService("UserInputService")
 
--- Shockwave Visual
-local function createShockwave(position)
-	local shock = Instance.new("Part")
-	shock.Size = Vector3.new(1, 1, 1)
-	shock.Shape = Enum.PartType.Ball
-	shock.Material = Enum.Material.Neon
-	shock.Color = Color3.fromRGB(0, 200, 255)
-	shock.Anchored = true
-	shock.CanCollide = false
-	shock.CFrame = CFrame.new(position)
-	shock.Transparency = 0.5
-	shock.Parent = workspace
+-- ESP FUNCTION
+local function createESP(plr)
+	if plr == LocalPlayer then return end
+	local box = Drawing.new("Text")
+	box.Text = plr.Name
+	box.Color = Color3.fromRGB(0,255,0)
+	box.Size = 14
+	box.Center = true
+	box.Outline = true
+	box.Visible = true
 
-	local tweenInfo = TweenInfo.new(0.8, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
-	local tween = tweenService:Create(shock, tweenInfo, {
-		Size = Vector3.new(radius * 2, radius * 2, radius * 2),
-		Transparency = 1
-	})
-	tween:Play()
-	debris:AddItem(shock, 1)
+	local conn
+	conn = RunService.RenderStepped:Connect(function()
+		if not plr.Character or not plr.Character:FindFirstChild("HumanoidRootPart") then box.Visible = false return end
+		local pos, onScreen = Camera:WorldToViewportPoint(plr.Character.HumanoidRootPart.Position)
+		box.Position = Vector2.new(pos.X, pos.Y - 20)
+		box.Visible = onScreen and espEnabled
+	end)
+
+	table.insert(espConnections, {Drawing=box, Connection=conn})
 end
 
--- Sound FX
-local function playBoom(position)
-	local sound = Instance.new("Sound")
-	sound.SoundId = "rbxassetid://138186576" -- thunder boom
-	sound.Volume = 2
-	sound.PlayOnRemove = true
-	sound.Parent = workspace
-	sound.Position = position
-	sound:Destroy()
+local function toggleESP()
+	espEnabled = not espEnabled
+	if espEnabled then
+		for _, plr in pairs(Players:GetPlayers()) do
+			createESP(plr)
+		end
+	else
+		for _, v in pairs(espConnections) do
+			v.Connection:Disconnect()
+			v.Drawing:Remove()
+		end
+		espConnections = {}
+	end
 end
 
--- Chaos Wind Shockwave
-local function fireShockwave()
-	if not canCast then return end
-	canCast = false
+-- PHANTOM MODE
+local function togglePhantom()
+	phasing = not phasing
+	flying = phasing
+	local root = Character:WaitForChild("HumanoidRootPart")
+	local humanoid = Character:FindFirstChildOfClass("Humanoid")
 
-	local char = player.Character
-	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
-	local pos = char.HumanoidRootPart.Position
-	local hitParts = 0
+	if phasing then
+		for _, v in ipairs(Character:GetDescendants()) do
+			if v:IsA("BasePart") then v.CanCollide = false end
+		end
+		if humanoid then humanoid:ChangeState(11) end
+		phantomPart = Instance.new("BodyVelocity")
+		phantomPart.Velocity = Vector3.zero
+		phantomPart.MaxForce = Vector3.new(1,1,1) * 1e9
+		phantomPart.Parent = root
+	else
+		if phantomPart then phantomPart:Destroy() end
+	end
+end
 
-	createShockwave(pos)
-	playBoom(pos)
+-- FLIGHT LOGIC
+RunService.RenderStepped:Connect(function()
+	if flying and phantomPart then
+		local dir = Vector3.new()
+		if UserInputService:IsKeyDown(Enum.KeyCode.W) then dir = dir + Camera.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.S) then dir = dir - Camera.CFrame.LookVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.A) then dir = dir - Camera.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.D) then dir = dir + Camera.CFrame.RightVector end
+		if UserInputService:IsKeyDown(Enum.KeyCode.Space) then dir = dir + Vector3.new(0,1,0) end
+		if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then dir = dir - Vector3.new(0,1,0) end
+		phantomPart.Velocity = dir.Unit * 100
+	end
+end)
 
-	for _, obj in ipairs(workspace:GetDescendants()) do
-		if obj:IsA("BasePart") and obj:IsDescendantOf(char) == false then
-			local distance = (obj.Position - pos).Magnitude
-			if distance <= radius then
-				if obj.Anchored then
-					obj.Orientation += Vector3.new(0, math.random(-180, 180), 0)
-				else
-					local bv = Instance.new("BodyVelocity")
-					bv.Velocity = (obj.Position - pos).Unit * power
-					bv.MaxForce = Vector3.new(1, 1, 1) * 1e6
-					bv.Parent = obj
-					debris:AddItem(bv, 0.25)
-				end
-				hitParts += 1
+-- FLING FUNCTION
+local function flingNearby()
+	for _, plr in pairs(Players:GetPlayers()) do
+		if plr ~= LocalPlayer and plr.Character and plr.Character:FindFirstChild("HumanoidRootPart") then
+			local targetHRP = plr.Character.HumanoidRootPart
+			local myHRP = Character:FindFirstChild("HumanoidRootPart")
+			if (myHRP.Position - targetHRP.Position).Magnitude < 10 then
+				local bv = Instance.new("BodyVelocity", targetHRP)
+				bv.Velocity = Vector3.new(math.random(-400,400), 400, math.random(-400,400))
+				bv.MaxForce = Vector3.new(1,1,1) * 1e6
+				game.Debris:AddItem(bv, 0.2)
 			end
 		end
 	end
-
-	print("💨 E Key Chaos Wind! Hit:", hitParts, "parts.")
-	wait(cooldown)
-	canCast = true
 end
 
--- Bind to E Key
-userInput.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
+-- INPUT HANDLER
+UserInputService.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
 	if input.KeyCode == Enum.KeyCode.E then
-		fireShockwave()
+		togglePhantom()
+	elseif input.KeyCode == Enum.KeyCode.T then
+		toggleESP()
+	elseif input.KeyCode == Enum.KeyCode.R then
+		flingNearby()
 	end
+end)
+
+-- Auto ESP Update
+Players.PlayerAdded:Connect(function(p)
+	if espEnabled then task.wait(1) createESP(p) end
 end)
