@@ -1,110 +1,123 @@
--- FULL ALL-IN-ONE SCRIPT: SEARCH ALL TOOLS IN GAME + GIVE ON CLICK
-
+-- LocalScript: Put in StarterPlayerScripts
 local Players = game:GetService("Players")
-local ReplicatedStorage = game:GetService("ReplicatedStorage")
-local RunService = game:GetService("RunService")
-
--- Server part
-if RunService:IsServer() then
-    -- Create RemoteEvent if missing
-    local remote = ReplicatedStorage:FindFirstChild("GiveToolEvent")
-    if not remote then
-        remote = Instance.new("RemoteEvent")
-        remote.Name = "GiveToolEvent"
-        remote.Parent = ReplicatedStorage
-    end
-
-    -- Scan all tools in game (descendants)
-    local function getAllTools()
-        local tools = {}
-        for _, obj in ipairs(game:GetDescendants()) do
-            if obj:IsA("Tool") then
-                -- Store first found tool by name only
-                if not tools[obj.Name] then
-                    tools[obj.Name] = obj
-                end
-            end
-        end
-        return tools
-    end
-
-    local toolsMap = getAllTools()
-
-    -- Listen for tool requests from clients
-    remote.OnServerEvent:Connect(function(player, toolName)
-        local tool = toolsMap[toolName]
-        if tool and tool:IsA("Tool") then
-            local clone = tool:Clone()
-            clone.Parent = player:WaitForChild("Backpack")
-        end
-    end)
-
-    return
-end
-
--- Client part
 local player = Players.LocalPlayer
-local remote = ReplicatedStorage:WaitForChild("GiveToolEvent")
+local mouse = player:GetMouse()
 
--- Client scans all tool names locally to show buttons
-local function getAllToolNames()
-    local names = {}
-    local seen = {}
-    for _, obj in ipairs(game:GetDescendants()) do
-        if obj:IsA("Tool") and not seen[obj.Name] then
-            seen[obj.Name] = true
-            table.insert(names, obj.Name)
-        end
-    end
-    table.sort(names)
-    return names
+-- Folder where all tools are located (searching everywhere in game)
+local function findAllTools()
+	local tools = {}
+	for _, obj in ipairs(game:GetDescendants()) do
+		if obj:IsA("Tool") then
+			table.insert(tools, obj)
+		end
+	end
+	return tools
 end
 
-local toolNames = getAllToolNames()
+-- GUI creation
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "ItemExplorerGui"
+screenGui.ResetOnSpawn = false
+screenGui.Parent = player:WaitForChild("PlayerGui")
 
--- Create GUI
-local gui = Instance.new("ScreenGui")
-gui.Name = "ToolRequestGui"
-gui.Parent = player:WaitForChild("PlayerGui")
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 120, 0, 40)
+toggleButton.Position = UDim2.new(0, 10, 0, 10)
+toggleButton.Text = "Open Item Explorer"
+toggleButton.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+toggleButton.TextColor3 = Color3.new(1, 1, 1)
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 18
+toggleButton.Parent = screenGui
 
-local title = Instance.new("TextLabel")
-title.Text = "🧰 Get Any Tool in Game"
-title.Size = UDim2.new(0, 300, 0, 40)
-title.Position = UDim2.new(0, 20, 0.1, 0)
-title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-title.TextColor3 = Color3.new(1, 1, 1)
-title.Font = Enum.Font.GothamBold
-title.TextSize = 20
-title.Parent = gui
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 400, 0, 350)
+mainFrame.Position = UDim2.new(0.5, -200, 0.5, -175)
+mainFrame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+mainFrame.BorderSizePixel = 2
+mainFrame.Visible = false
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
 
-local frame = Instance.new("ScrollingFrame")
-frame.Size = UDim2.new(0, 300, 0.6, 0)
-frame.Position = UDim2.new(0, 20, 0.1 + 40/1080, 0)
-frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-frame.ScrollBarThickness = 6
-frame.Parent = gui
+local titleBar = Instance.new("TextLabel")
+titleBar.Size = UDim2.new(1, 0, 0, 40)
+titleBar.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+titleBar.Text = "Item Explorer"
+titleBar.Font = Enum.Font.SourceSansBold
+titleBar.TextSize = 20
+titleBar.TextColor3 = Color3.new(1, 1, 1)
+titleBar.Parent = mainFrame
 
-local layout = Instance.new("UIListLayout")
-layout.Padding = UDim.new(0, 4)
-layout.SortOrder = Enum.SortOrder.Name
-layout.Parent = frame
+local closeButton = Instance.new("TextButton")
+closeButton.Size = UDim2.new(0, 30, 0, 30)
+closeButton.Position = UDim2.new(1, -35, 0, 5)
+closeButton.Text = "X"
+closeButton.BackgroundColor3 = Color3.fromRGB(100, 30, 30)
+closeButton.TextColor3 = Color3.new(1, 1, 1)
+closeButton.Font = Enum.Font.SourceSansBold
+closeButton.TextSize = 16
+closeButton.Parent = mainFrame
 
--- Add a button for each tool name
-for _, name in ipairs(toolNames) do
-    local button = Instance.new("TextButton")
-    button.Size = UDim2.new(1, -10, 0, 40)
-    button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-    button.TextColor3 = Color3.new(1, 1, 1)
-    button.Font = Enum.Font.GothamBold
-    button.TextSize = 16
-    button.Text = "Get: " .. name
-    button.Parent = frame
+local scrollFrame = Instance.new("ScrollingFrame")
+scrollFrame.Size = UDim2.new(1, -20, 1, -60)
+scrollFrame.Position = UDim2.new(0, 10, 0, 50)
+scrollFrame.CanvasSize = UDim2.new(0, 0, 0, 0)
+scrollFrame.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+scrollFrame.BorderSizePixel = 0
+scrollFrame.ScrollBarThickness = 8
+scrollFrame.Parent = mainFrame
 
-    button.MouseButton1Click:Connect(function()
-        remote:FireServer(name)
-        button.Text = "✅ Given: " .. name
-    end)
+local UIListLayout = Instance.new("UIListLayout")
+UIListLayout.Padding = UDim.new(0, 5)
+UIListLayout.SortOrder = Enum.SortOrder.Name
+UIListLayout.Parent = scrollFrame
+
+-- Update canvas size
+local function updateCanvas()
+	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, UIListLayout.AbsoluteContentSize.Y)
+end
+UIListLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+
+-- Create item buttons
+local function createItemButtons()
+	scrollFrame:ClearAllChildren()
+	UIListLayout.Parent = scrollFrame -- Reparent
+
+	for _, tool in ipairs(findAllTools()) do
+		local toolButton = Instance.new("TextButton")
+		toolButton.Size = UDim2.new(1, -10, 0, 30)
+		toolButton.BackgroundColor3 = Color3.fromRGB(70, 70, 70)
+		toolButton.TextColor3 = Color3.new(1, 1, 1)
+		toolButton.Font = Enum.Font.SourceSans
+		toolButton.TextSize = 16
+		toolButton.Text = tool:GetFullName()
+		toolButton.Parent = scrollFrame
+
+		toolButton.MouseButton1Click:Connect(function()
+			local success, clonedTool = pcall(function()
+				return tool:Clone()
+			end)
+
+			if success and clonedTool and clonedTool:IsA("Tool") then
+				clonedTool.Parent = player:WaitForChild("Backpack")
+			end
+		end)
+	end
 end
 
--- Set canvas size to fit buttons
-frame.CanvasSize = UDim2.new(0, 0, 0, #frame:GetChildren() * 44)
+-- Open/Close logic
+toggleButton.MouseButton1Click:Connect(function()
+	mainFrame.Visible = not mainFrame.Visible
+	if mainFrame.Visible then
+		toggleButton.Text = "Close Item Explorer"
+		createItemButtons()
+	else
+		toggleButton.Text = "Open Item Explorer"
+	end
+end)
+
+closeButton.MouseButton1Click:Connect(function()
+	mainFrame.Visible = false
+	toggleButton.Text = "Open Item Explorer"
+end)
