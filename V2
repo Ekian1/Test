@@ -1,44 +1,52 @@
--- ✅ FULL TOOL GIVER SYSTEM (PRIVATE SERVER TESTING ONLY)
+-- ONE SCRIPT: SERVER + CLIENT TOOL GIVER FOR PRIVATE SERVER ONLY
 
-local player = game:GetService("Players").LocalPlayer
-local replicatedStorage = game:GetService("ReplicatedStorage")
-local serverStorage = game:GetService("ServerStorage")
+local Players = game:GetService("Players")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local ServerStorage = game:GetService("ServerStorage")
+local RunService = game:GetService("RunService")
 
--- Setup RemoteEvent (safe for multiple runs)
-local remote = replicatedStorage:FindFirstChild("GiveToolEvent")
-if not remote then
+local player = Players.LocalPlayer
+
+-- Create RemoteEvent if missing (server only)
+local remote = ReplicatedStorage:FindFirstChild("GiveToolEvent")
+if not remote and RunService:IsServer() then
     remote = Instance.new("RemoteEvent")
     remote.Name = "GiveToolEvent"
-    remote.Parent = replicatedStorage
+    remote.Parent = ReplicatedStorage
 end
 
--- Setup tool folder (must be in ServerStorage)
-local toolFolder = serverStorage:FindFirstChild("Tools")
-if not toolFolder then
-    toolFolder = Instance.new("Folder")
-    toolFolder.Name = "Tools"
-    toolFolder.Parent = serverStorage
+-- Ensure Tools folder in ServerStorage (server only)
+local toolsFolder = ServerStorage:FindFirstChild("Tools")
+if not toolsFolder and RunService:IsServer() then
+    toolsFolder = Instance.new("Folder")
+    toolsFolder.Name = "Tools"
+    toolsFolder.Parent = ServerStorage
 end
 
--- Make sure server handler exists only once
-if not _G.ToolHandlerSetup then
-    _G.ToolHandlerSetup = true
-
+-- Server: Listen and give tools to player Backpack
+if RunService:IsServer() then
     remote.OnServerEvent:Connect(function(plr, toolName)
-        local tool = toolFolder:FindFirstChild(toolName)
+        local tool = toolsFolder:FindFirstChild(toolName)
         if tool and tool:IsA("Tool") then
             local clone = tool:Clone()
             clone.Parent = plr:WaitForChild("Backpack")
         end
     end)
+    return
 end
 
--- ✅ GUI SETUP (Client-side)
-local gui = Instance.new("ScreenGui", player:WaitForChild("PlayerGui"))
-gui.Name = "ToolGrabberGui"
-gui.ResetOnSpawn = false
+-- CLIENT SIDE BELOW --
 
-local title = Instance.new("TextLabel", gui)
+-- Wait for RemoteEvent & Tools folder to exist
+remote = ReplicatedStorage:WaitForChild("GiveToolEvent")
+toolsFolder = ServerStorage:WaitForChild("Tools")
+
+-- Create GUI
+local gui = Instance.new("ScreenGui")
+gui.Name = "ToolRequestGui"
+gui.Parent = player:WaitForChild("PlayerGui")
+
+local title = Instance.new("TextLabel")
 title.Text = "🧰 Get Server Tools"
 title.Size = UDim2.new(0, 300, 0, 40)
 title.Position = UDim2.new(0, 20, 0.1, 0)
@@ -46,22 +54,22 @@ title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
 title.TextColor3 = Color3.new(1, 1, 1)
 title.Font = Enum.Font.GothamBold
 title.TextSize = 20
+title.Parent = gui
 
-local frame = Instance.new("ScrollingFrame", gui)
+local frame = Instance.new("ScrollingFrame")
 frame.Size = UDim2.new(0, 300, 0.6, 0)
 frame.Position = UDim2.new(0, 20, 0.1 + 40/1080, 0)
 frame.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
 frame.ScrollBarThickness = 6
+frame.Parent = gui
 
-local layout = Instance.new("UIListLayout", frame)
+local layout = Instance.new("UIListLayout")
 layout.Padding = UDim.new(0, 4)
 layout.SortOrder = Enum.SortOrder.Name
+layout.Parent = frame
 
--- Wait for server to populate Tools folder manually or externally
-task.wait(1)
-
--- List tools
-for _, tool in ipairs(toolFolder:GetChildren()) do
+-- Populate buttons for each Tool found in ServerStorage.Tools
+for _, tool in ipairs(toolsFolder:GetChildren()) do
     if tool:IsA("Tool") then
         local button = Instance.new("TextButton")
         button.Size = UDim2.new(1, -10, 0, 40)
@@ -79,4 +87,5 @@ for _, tool in ipairs(toolFolder:GetChildren()) do
     end
 end
 
+-- Adjust canvas size
 frame.CanvasSize = UDim2.new(0, 0, 0, #frame:GetChildren() * 44)
