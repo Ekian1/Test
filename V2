@@ -1,1 +1,60 @@
-loadstring(game:HttpGet("https://codeberg.org/twentys2/Scripts/raw/branch/main/Grow-A-Garden"))()
+-- XENO SCRIPT: SERVER CHAOS - Fling All Unanchored Parts to Random Players
+-- Works in private servers if you have server-side executor (e.g., Synapse, KRNL, Xeno Pro)
+-- Press "E" to trigger
+
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
+local LocalPlayer = Players.LocalPlayer
+
+-- === FUNCTION: Get all valid targets (players with HumanoidRootPart) ===
+local function getTargets()
+	local targets = {}
+	for _, player in pairs(Players:GetPlayers()) do
+		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
+			table.insert(targets, player.Character.HumanoidRootPart)
+		end
+	end
+	return targets
+end
+
+-- === FUNCTION: Get all unanchored parts in the game ===
+local function getParts()
+	local parts = {}
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and not obj.Anchored and not obj:IsDescendantOf(LocalPlayer.Character or {}) then
+			table.insert(parts, obj)
+		end
+	end
+	return parts
+end
+
+-- === FUNCTION: Fling all unanchored parts to random players ===
+local function fling()
+	local targets = getTargets()
+	local parts = getParts()
+	
+	if #targets == 0 then
+		warn("❌ No targets found.")
+		return
+	end
+
+	for _, part in pairs(parts) do
+		local target = targets[math.random(1, #targets)]
+		local direction = (target.Position - part.Position).Unit
+		local forceMagnitude = math.random(3000, 8000)
+		
+		part.Velocity = direction * forceMagnitude
+		part.RotVelocity = Vector3.new(math.random(), math.random(), math.random()) * 25
+	end
+end
+
+-- === KEY PRESS HANDLER ===
+UIS.InputBegan:Connect(function(input, isTyping)
+	if isTyping then return end
+	if input.KeyCode == Enum.KeyCode.E then
+		fling()
+	end
+end)
+
+print("✅ Script Loaded: Press E to fling all unanchored parts at random players.")
