@@ -1,13 +1,40 @@
--- XENO SCRIPT: SERVER CHAOS - Fling All Unanchored Parts to Random Players
--- Works in private servers if you have server-side executor (e.g., Synapse, KRNL, Xeno Pro)
--- Press "E" to trigger
+-- 💣 XENO UNANCHORED FLINGER w/ GUI
+-- Fling unanchored parts toward you + random players
+-- Works after death & has a GUI toggle
+-- Made for private server Xeno use (server-impacting)
 
 local Players = game:GetService("Players")
-local RunService = game:GetService("RunService")
 local UIS = game:GetService("UserInputService")
+local RS = game:GetService("RunService")
 local LocalPlayer = Players.LocalPlayer
 
--- === FUNCTION: Get all valid targets (players with HumanoidRootPart) ===
+-- === GUI Setup ===
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "FlingGUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game.CoreGui
+
+local ToggleButton = Instance.new("TextButton")
+ToggleButton.Size = UDim2.new(0, 180, 0, 50)
+ToggleButton.Position = UDim2.new(0, 20, 0, 100)
+ToggleButton.Text = "🌀 Fling Enabled"
+ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
+ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+ToggleButton.TextSize = 18
+ToggleButton.Font = Enum.Font.GothamBold
+ToggleButton.Parent = ScreenGui
+ToggleButton.Active = true
+ToggleButton.Draggable = true
+
+local Enabled = true
+
+ToggleButton.MouseButton1Click:Connect(function()
+	Enabled = not Enabled
+	ToggleButton.Text = Enabled and "🌀 Fling Enabled" or "🛑 Fling Disabled"
+	ToggleButton.BackgroundColor3 = Enabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
+end)
+
+-- === Get all targets (excluding self) ===
 local function getTargets()
 	local targets = {}
 	for _, player in pairs(Players:GetPlayers()) do
@@ -18,7 +45,7 @@ local function getTargets()
 	return targets
 end
 
--- === FUNCTION: Get all unanchored parts in the game ===
+-- === Get all unanchored parts ===
 local function getParts()
 	local parts = {}
 	for _, obj in pairs(workspace:GetDescendants()) do
@@ -29,32 +56,38 @@ local function getParts()
 	return parts
 end
 
--- === FUNCTION: Fling all unanchored parts to random players ===
-local function fling()
+-- === Core Fling Function ===
+local function flingParts()
 	local targets = getTargets()
+	if #targets == 0 then return end
 	local parts = getParts()
 	
-	if #targets == 0 then
-		warn("❌ No targets found.")
-		return
-	end
-
 	for _, part in pairs(parts) do
-		local target = targets[math.random(1, #targets)]
-		local direction = (target.Position - part.Position).Unit
-		local forceMagnitude = math.random(3000, 8000)
-		
-		part.Velocity = direction * forceMagnitude
-		part.RotVelocity = Vector3.new(math.random(), math.random(), math.random()) * 25
+		local chosen = targets[math.random(1, #targets)]
+		local pos = (chosen.Position + LocalPlayer.Character.HumanoidRootPart.Position) / 2
+		local dir = (pos - part.Position).Unit
+		local force = math.random(3000, 8000)
+
+		part.Velocity = dir * force
+		part.RotVelocity = Vector3.new(math.random(), math.random(), math.random()) * 20
 	end
 end
 
--- === KEY PRESS HANDLER ===
+-- === Keyboard Control ===
 UIS.InputBegan:Connect(function(input, isTyping)
-	if isTyping then return end
+	if isTyping or not Enabled then return end
 	if input.KeyCode == Enum.KeyCode.E then
-		fling()
+		if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
+		flingParts()
 	end
 end)
 
-print("✅ Script Loaded: Press E to fling all unanchored parts at random players.")
+-- === Respawn-safe: Reconnect if Character is added ===
+LocalPlayer.CharacterAdded:Connect(function()
+	wait(1) -- Wait for character to fully load
+	if not ScreenGui or not ScreenGui.Parent then
+		ScreenGui.Parent = game.CoreGui
+	end
+end)
+
+print("✅ Xeno Part Flinger Loaded — Press E to fling unanchored parts toward players.")
