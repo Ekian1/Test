@@ -1,1 +1,1 @@
-loadstring(game:HttpGet('https://raw.githubusercontent.com/BludnyHolandan/GrowAGarden/refs/heads/main/autofarm/mainstring.lua'))()
+loadstring(game:HttpGet("https://codeberg.org/twentys2/Scripts/raw/branch/main/Grow-A-Garden"))()
