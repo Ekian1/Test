@@ -1,93 +1,115 @@
--- 💣 XENO UNANCHORED FLINGER w/ GUI
--- Fling unanchored parts toward you + random players
--- Works after death & has a GUI toggle
--- Made for private server Xeno use (server-impacting)
+-- ⚛️ XENO ORB OF DEATH
+-- All parts (even anchored) teleport to form an orb around you.
+-- They stop, and fling-kill any player that touches them.
+-- GUI shows if it’s active. Works after death.
 
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
 local RS = game:GetService("RunService")
+local UIS = game:GetService("UserInputService")
 local LocalPlayer = Players.LocalPlayer
 
 -- === GUI Setup ===
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name = "FlingGUI"
-ScreenGui.ResetOnSpawn = false
-ScreenGui.Parent = game.CoreGui
+local gui = Instance.new("ScreenGui")
+gui.Name = "OrbStatusGui"
+gui.ResetOnSpawn = false
+gui.Parent = game.CoreGui
 
-local ToggleButton = Instance.new("TextButton")
-ToggleButton.Size = UDim2.new(0, 180, 0, 50)
-ToggleButton.Position = UDim2.new(0, 20, 0, 100)
-ToggleButton.Text = "🌀 Fling Enabled"
-ToggleButton.BackgroundColor3 = Color3.fromRGB(50, 200, 50)
-ToggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-ToggleButton.TextSize = 18
-ToggleButton.Font = Enum.Font.GothamBold
-ToggleButton.Parent = ScreenGui
-ToggleButton.Active = true
-ToggleButton.Draggable = true
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0, 250, 0, 50)
+label.Position = UDim2.new(0, 20, 0, 100)
+label.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+label.TextColor3 = Color3.fromRGB(255, 255, 255)
+label.Font = Enum.Font.GothamBold
+label.TextSize = 18
+label.Text = "🌀 Orb Inactive (Press E)"
+label.Parent = gui
 
-local Enabled = true
-
-ToggleButton.MouseButton1Click:Connect(function()
-	Enabled = not Enabled
-	ToggleButton.Text = Enabled and "🌀 Fling Enabled" or "🛑 Fling Disabled"
-	ToggleButton.BackgroundColor3 = Enabled and Color3.fromRGB(50, 200, 50) or Color3.fromRGB(200, 50, 50)
-end)
-
--- === Get all targets (excluding self) ===
-local function getTargets()
-	local targets = {}
-	for _, player in pairs(Players:GetPlayers()) do
-		if player.Character and player.Character:FindFirstChild("HumanoidRootPart") then
-			table.insert(targets, player.Character.HumanoidRootPart)
-		end
-	end
-	return targets
-end
-
--- === Get all unanchored parts ===
-local function getParts()
-	local parts = {}
-	for _, obj in pairs(workspace:GetDescendants()) do
-		if obj:IsA("BasePart") and not obj.Anchored and not obj:IsDescendantOf(LocalPlayer.Character or {}) then
-			table.insert(parts, obj)
-		end
-	end
-	return parts
-end
-
--- === Core Fling Function ===
-local function flingParts()
-	local targets = getTargets()
-	if #targets == 0 then return end
-	local parts = getParts()
+-- === Create Orb ===
+local function createOrb()
+	local character = LocalPlayer.Character
+	if not character or not character:FindFirstChild("HumanoidRootPart") then return end
 	
-	for _, part in pairs(parts) do
-		local chosen = targets[math.random(1, #targets)]
-		local pos = (chosen.Position + LocalPlayer.Character.HumanoidRootPart.Position) / 2
-		local dir = (pos - part.Position).Unit
-		local force = math.random(3000, 8000)
+	local origin = character.HumanoidRootPart.Position
+	local radius = 12
+	local heightOffset = 5
+	local orbParts = {}
+	
+	local allParts = {}
+	for _, obj in pairs(workspace:GetDescendants()) do
+		if obj:IsA("BasePart") and not obj:IsDescendantOf(character) then
+			table.insert(allParts, obj)
+		end
+	end
 
-		part.Velocity = dir * force
-		part.RotVelocity = Vector3.new(math.random(), math.random(), math.random()) * 20
+	local angleStep = 360 / math.max(#allParts, 1)
+	local currentAngle = 0
+	
+	for i, part in pairs(allParts) do
+		local clone = part
+		if part.Anchored then
+			part.Anchored = false
+		end
+
+		currentAngle += angleStep
+		local rad = math.rad(currentAngle)
+		local x = math.cos(rad) * radius
+		local z = math.sin(rad) * radius
+		local targetPos = origin + Vector3.new(x, heightOffset, z)
+
+		part.CFrame = CFrame.new(targetPos)
+		part.Velocity = Vector3.zero
+		part.RotVelocity = Vector3.zero
+
+		-- Prevent physics explosions
+		if part:IsA("BasePart") then
+			part.CanCollide = true
+		end
+
+		table.insert(orbParts, part)
+	end
+
+	return orbParts
+end
+
+-- === Fling Any Touching Player ===
+local function enableFlingDamage(orbParts)
+	for _, part in pairs(orbParts) do
+		part.Touched:Connect(function(hit)
+			local plr = Players:GetPlayerFromCharacter(hit.Parent)
+			if plr and plr ~= LocalPlayer then
+				local hrp = hit.Parent:FindFirstChild("HumanoidRootPart")
+				if hrp then
+					hrp.Velocity = Vector3.new(math.random(-1,1),1,math.random(-1,1)).Unit * 150
+					local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
+					if hum then hum:TakeDamage(999) end
+				end
+			end
+		end)
 	end
 end
 
--- === Keyboard Control ===
-UIS.InputBegan:Connect(function(input, isTyping)
-	if isTyping or not Enabled then return end
+-- === Activation ===
+local function activateOrb()
+	label.Text = "🌀 Orb Forming..."
+	local orb = createOrb()
+	wait(1)
+	label.Text = "☄️ Orb Active - Flinging on Touch"
+	enableFlingDamage(orb)
+end
+
+-- === Keybind ===
+UIS.InputBegan:Connect(function(input, gpe)
+	if gpe then return end
 	if input.KeyCode == Enum.KeyCode.E then
-		if not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") then return end
-		flingParts()
+		activateOrb()
 	end
 end)
 
--- === Respawn-safe: Reconnect if Character is added ===
+-- === Respawn Safety ===
 LocalPlayer.CharacterAdded:Connect(function()
-	wait(1) -- Wait for character to fully load
-	if not ScreenGui or not ScreenGui.Parent then
-		ScreenGui.Parent = game.CoreGui
-	end
+	wait(1)
+	gui.Parent = game.CoreGui
+	label.Text = "🌀 Orb Inactive (Press E)"
 end)
 
-print("✅ Xeno Part Flinger Loaded — Press E to fling unanchored parts toward players.")
+print("✅ Orb of Death Script Loaded. Press E to summon chaos.")
