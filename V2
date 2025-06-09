@@ -1,73 +1,76 @@
--- ☠️ SERVER ORB FLINGER - FULL VERSION
--- All parts are server-moved to form a real orb.
--- Players are flung if they touch it.
--- Not visual-only. Works on death.
+--[[
+  Xeno Server-Side Orb Flinger
+  Press E to form orb of parts around YOU.
+  Touch orb parts to get flung + damaged.
+  GUI shows orb status, works after death.
+]]
 
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService")
-local LP = Players.LocalPlayer
+local UIS = game:GetService("UserInputService") -- server can listen if executor supports
 local RS = game:GetService("RunService")
+local LocalPlayer = Players.LocalPlayer
 
--- === GUI: Inform only ===
-local gui = Instance.new("ScreenGui", game.CoreGui)
-gui.Name = "OrbInfo"
+-- Wait for player to load
+while not LocalPlayer or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") do
+	task.wait()
+	LocalPlayer = Players.LocalPlayer
+end
+
+local gui = Instance.new("ScreenGui")
+gui.Name = "OrbFlingerGui"
 gui.ResetOnSpawn = false
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
 
-local statusLabel = Instance.new("TextLabel", gui)
-statusLabel.Size = UDim2.new(0, 220, 0, 40)
-statusLabel.Position = UDim2.new(0, 20, 0, 100)
-statusLabel.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
-statusLabel.TextColor3 = Color3.fromRGB(255, 255, 255)
-statusLabel.Font = Enum.Font.GothamBold
-statusLabel.TextSize = 18
-statusLabel.Text = "🌀 Orb Inactive (Press E)"
+local label = Instance.new("TextLabel")
+label.Size = UDim2.new(0, 220, 0, 40)
+label.Position = UDim2.new(0, 20, 0, 100)
+label.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+label.TextColor3 = Color3.fromRGB(255, 255, 255)
+label.Font = Enum.Font.GothamBold
+label.TextSize = 18
+label.Text = "🌀 Orb Inactive (Press E)"
+label.Parent = gui
 
--- === Create Orb ===
-local function createRealOrb()
-	local char = LP.Character
-	if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+-- Store orb parts to connect touch event only once
+local orbParts = {}
 
-	local origin = char.HumanoidRootPart.Position
-	local orbParts = {}
-	local radius = 10
-	local angleStep = 15
-	local currentAngle = 0
-	local heightStep = 5
+-- Create orb around player
+local function createOrb(player)
+	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
+	local origin = player.Character.HumanoidRootPart.Position
 
 	local parts = {}
-	for _, p in pairs(workspace:GetDescendants()) do
-		if p:IsA("BasePart") and not p:IsDescendantOf(char) then
-			table.insert(parts, p)
+	for _, part in pairs(workspace:GetDescendants()) do
+		if part:IsA("BasePart") and not part:IsDescendantOf(player.Character) then
+			table.insert(parts, part)
 		end
 	end
 
+	local radius = 12
+	local angleStep = 360 / math.max(#parts, 1)
+	local currentAngle = 0
+	local heightOffset = 5
+
 	for i, part in pairs(parts) do
-		pcall(function()
-			part.Anchored = false -- Force unanchor even if it was anchored
-			part.AssemblyLinearVelocity = Vector3.zero
-			part.AssemblyAngularVelocity = Vector3.zero
+		currentAngle = currentAngle + angleStep
+		local rad = math.rad(currentAngle)
+		local x = math.cos(rad) * radius
+		local z = math.sin(rad) * radius
+		local targetPos = origin + Vector3.new(x, heightOffset, z)
 
-			local theta = math.rad(currentAngle)
-			local pos = origin + Vector3.new(math.cos(theta) * radius, (i % 2 == 0 and heightStep or -heightStep), math.sin(theta) * radius)
-			part.CFrame = CFrame.new(pos)
+		part.Anchored = false
+		part.AssemblyLinearVelocity = Vector3.zero
+		part.AssemblyAngularVelocity = Vector3.zero
+		part.CFrame = CFrame.new(targetPos)
+		part.CanCollide = true
 
-			currentAngle += angleStep
-			table.insert(orbParts, part)
-		end)
-	end
-	return orbParts
-end
-
--- === Fling & damage players who touch ===
-local function enableDeadlyTouch(parts)
-	for _, part in pairs(parts) do
-		part.Touched:Connect(function(hit)
-			local p = Players:GetPlayerFromCharacter(hit.Parent)
-			if p and p ~= LP then
+		orbParts[part] = orbParts[part] or part.Touched:Connect(function(hit)
+			local hitPlayer = Players:GetPlayerFromCharacter(hit.Parent)
+			if hitPlayer and hitPlayer ~= player then
 				local hrp = hit.Parent:FindFirstChild("HumanoidRootPart")
 				local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
 				if hrp then
-					hrp.Velocity = Vector3.new(0, 200, 0) + Vector3.new(math.random(-100,100), 0, math.random(-100,100))
+					hrp.Velocity = Vector3.new(math.random(-50,50), 200, math.random(-50,50))
 				end
 				if hum then
 					hum:TakeDamage(100)
@@ -77,28 +80,29 @@ local function enableDeadlyTouch(parts)
 	end
 end
 
--- === Activate Orb ===
+-- Activate orb flinger
 local function activateOrb()
-	statusLabel.Text = "🌀 Orb Forming..."
-	local orbParts = createRealOrb()
-	wait(1)
-	enableDeadlyTouch(orbParts)
-	statusLabel.Text = "☄️ Orb Active - Fling on Touch"
+	label.Text = "🌀 Orb Forming..."
+	createOrb(LocalPlayer)
+	task.wait(1)
+	label.Text = "☄️ Orb Active - Fling on Touch"
 end
 
--- === Keybind E ===
-UIS.InputBegan:Connect(function(input, gpe)
-	if gpe then return end
+-- Listen for E press server-side
+UIS.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
 	if input.KeyCode == Enum.KeyCode.E then
 		activateOrb()
 	end
 end)
 
--- === Death-safe UI ===
-LP.CharacterAdded:Connect(function()
-	wait(1)
-	gui.Parent = game.CoreGui
-	statusLabel.Text = "🌀 Orb Inactive (Press E)"
+-- Reset GUI after respawn
+Players.LocalPlayer.CharacterAdded:Connect(function()
+	task.wait(1)
+	if not gui.Parent then
+		gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
+	end
+	label.Text = "🌀 Orb Inactive (Press E)"
 end)
 
-print("✅ Orb loaded - Real server-side part control. Press E to form it.")
+print("✅ Xeno Orb Flinger Server-Side script loaded. Press E to activate.")
