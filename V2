@@ -1,108 +1,167 @@
---[[
-  Xeno Server-Side Orb Flinger
-  Press E to form orb of parts around YOU.
-  Touch orb parts to get flung + damaged.
-  GUI shows orb status, works after death.
-]]
+-- SINGLE SCRIPT FOR SERVER EXECUTOR (Xeno server mode, KRNL server mode, etc)
 
 local Players = game:GetService("Players")
-local UIS = game:GetService("UserInputService") -- server can listen if executor supports
-local RS = game:GetService("RunService")
-local LocalPlayer = Players.LocalPlayer
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
--- Wait for player to load
-while not LocalPlayer or not LocalPlayer.Character or not LocalPlayer.Character:FindFirstChild("HumanoidRootPart") do
-	task.wait()
-	LocalPlayer = Players.LocalPlayer
+-- Setup RemoteEvent for client-server comms
+local orbEvent = ReplicatedStorage:FindFirstChild("OrbEvent")
+if not orbEvent then
+    orbEvent = Instance.new("RemoteEvent")
+    orbEvent.Name = "OrbEvent"
+    orbEvent.Parent = ReplicatedStorage
 end
 
-local gui = Instance.new("ScreenGui")
-gui.Name = "OrbFlingerGui"
-gui.ResetOnSpawn = false
-gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+-- Function to create GUI for player (sent by server)
+local function createGuiForPlayer(player)
+    local playerGui = player:WaitForChild("PlayerGui")
+    local gui = Instance.new("ScreenGui")
+    gui.Name = "OrbFlingerGui"
+    gui.ResetOnSpawn = false
+    gui.Parent = playerGui
 
-local label = Instance.new("TextLabel")
-label.Size = UDim2.new(0, 220, 0, 40)
-label.Position = UDim2.new(0, 20, 0, 100)
-label.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
-label.TextColor3 = Color3.fromRGB(255, 255, 255)
-label.Font = Enum.Font.GothamBold
-label.TextSize = 18
-label.Text = "🌀 Orb Inactive (Press E)"
-label.Parent = gui
+    local label = Instance.new("TextLabel")
+    label.Size = UDim2.new(0, 220, 0, 40)
+    label.Position = UDim2.new(0, 20, 0, 100)
+    label.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+    label.TextColor3 = Color3.fromRGB(255, 255, 255)
+    label.Font = Enum.Font.GothamBold
+    label.TextSize = 18
+    label.Text = "🌀 Orb Inactive (Press E)"
+    label.Name = "StatusLabel"
+    label.Parent = gui
+    return label
+end
 
--- Store orb parts to connect touch event only once
-local orbParts = {}
+-- Store each player's orb parts and status
+local playerData = {}
 
--- Create orb around player
+-- Create orb parts and set flinging
 local function createOrb(player)
-	if not player.Character or not player.Character:FindFirstChild("HumanoidRootPart") then return end
-	local origin = player.Character.HumanoidRootPart.Position
+    local char = player.Character
+    if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+    local origin = char.HumanoidRootPart.Position
 
-	local parts = {}
-	for _, part in pairs(workspace:GetDescendants()) do
-		if part:IsA("BasePart") and not part:IsDescendantOf(player.Character) then
-			table.insert(parts, part)
-		end
-	end
+    -- Gather all parts except player's own character parts
+    local parts = {}
+    for _, p in pairs(workspace:GetDescendants()) do
+        if p:IsA("BasePart") and not p:IsDescendantOf(char) then
+            table.insert(parts, p)
+        end
+    end
 
-	local radius = 12
-	local angleStep = 360 / math.max(#parts, 1)
-	local currentAngle = 0
-	local heightOffset = 5
+    local orbParts = {}
+    local radius = 12
+    local angleStep = 360 / math.max(#parts, 1)
+    local currentAngle = 0
+    local heightOffset = 5
 
-	for i, part in pairs(parts) do
-		currentAngle = currentAngle + angleStep
-		local rad = math.rad(currentAngle)
-		local x = math.cos(rad) * radius
-		local z = math.sin(rad) * radius
-		local targetPos = origin + Vector3.new(x, heightOffset, z)
+    for i, part in pairs(parts) do
+        currentAngle = currentAngle + angleStep
+        local rad = math.rad(currentAngle)
+        local x = math.cos(rad) * radius
+        local z = math.sin(rad) * radius
+        local targetPos = origin + Vector3.new(x, heightOffset, z)
 
-		part.Anchored = false
-		part.AssemblyLinearVelocity = Vector3.zero
-		part.AssemblyAngularVelocity = Vector3.zero
-		part.CFrame = CFrame.new(targetPos)
-		part.CanCollide = true
+        -- Force unanchor and reset velocity
+        part.Anchored = false
+        part.AssemblyLinearVelocity = Vector3.zero
+        part.AssemblyAngularVelocity = Vector3.zero
+        part.CFrame = CFrame.new(targetPos)
+        part.CanCollide = true
 
-		orbParts[part] = orbParts[part] or part.Touched:Connect(function(hit)
-			local hitPlayer = Players:GetPlayerFromCharacter(hit.Parent)
-			if hitPlayer and hitPlayer ~= player then
-				local hrp = hit.Parent:FindFirstChild("HumanoidRootPart")
-				local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
-				if hrp then
-					hrp.Velocity = Vector3.new(math.random(-50,50), 200, math.random(-50,50))
-				end
-				if hum then
-					hum:TakeDamage(100)
-				end
-			end
-		end)
-	end
+        orbParts[part] = orbParts[part] or part.Touched:Connect(function(hit)
+            local hitPlayer = Players:GetPlayerFromCharacter(hit.Parent)
+            if hitPlayer and hitPlayer ~= player then
+                local hrp = hit.Parent:FindFirstChild("HumanoidRootPart")
+                local hum = hit.Parent:FindFirstChildOfClass("Humanoid")
+                if hrp then
+                    hrp.Velocity = Vector3.new(math.random(-50,50), 200, math.random(-50,50))
+                end
+                if hum then
+                    hum:TakeDamage(100)
+                end
+            end
+        end)
+    end
+    return orbParts
 end
 
--- Activate orb flinger
-local function activateOrb()
-	label.Text = "🌀 Orb Forming..."
-	createOrb(LocalPlayer)
-	task.wait(1)
-	label.Text = "☄️ Orb Active - Fling on Touch"
+-- Activate orb flinger for player
+local function activateOrbForPlayer(player)
+    local data = playerData[player]
+    if not data then return end
+
+    local label = data.statusLabel
+    label.Text = "🌀 Orb Forming..."
+
+    -- Clear previous orb connections if any
+    if data.orbParts then
+        for part, conn in pairs(data.orbParts) do
+            if conn then
+                conn:Disconnect()
+            end
+        end
+    end
+
+    -- Create orb
+    data.orbParts = createOrb(player)
+
+    task.wait(1)
+    label.Text = "☄️ Orb Active - Fling on Touch"
 end
 
--- Listen for E press server-side
-UIS.InputBegan:Connect(function(input, gameProcessed)
-	if gameProcessed then return end
-	if input.KeyCode == Enum.KeyCode.E then
-		activateOrb()
-	end
+-- When player joins, setup GUI and player data
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        task.wait(1)
+        local label = nil
+        local success, err = pcall(function()
+            label = createGuiForPlayer(player)
+        end)
+        if not success then
+            warn("Failed to create GUI for player:", err)
+        end
+        playerData[player] = { orbParts = {}, statusLabel = label }
+        if label then
+            label.Text = "🌀 Orb Inactive (Press E)"
+        end
+    end)
 end)
 
--- Reset GUI after respawn
-Players.LocalPlayer.CharacterAdded:Connect(function()
-	task.wait(1)
-	if not gui.Parent then
-		gui.Parent = Players.LocalPlayer:WaitForChild("PlayerGui")
-	end
-	label.Text = "🌀 Orb Inactive (Press E)"
+-- Handle OrbEvent from client (player pressed E)
+orbEvent.OnServerEvent:Connect(function(player)
+    activateOrbForPlayer(player)
 end)
 
-print("✅ Xeno Orb Flinger Server-Side script loaded. Press E to activate.")
+-- For players already in game when script runs
+for _, player in pairs(Players:GetPlayers()) do
+    player.CharacterAdded:Connect(function()
+        task.wait(1)
+        local label = nil
+        local success, err = pcall(function()
+            label = createGuiForPlayer(player)
+        end)
+        playerData[player] = { orbParts = {}, statusLabel = label }
+        if label then
+            label.Text = "🌀 Orb Inactive (Press E)"
+        end
+    end)
+end
+
+print("✅ Orb Flinger server script running")
+
+-- CLIENT SCRIPT snippet (give your friends to run client side):
+
+--[[
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local orbEvent = ReplicatedStorage:WaitForChild("OrbEvent")
+local UIS = game:GetService("UserInputService")
+
+UIS.InputBegan:Connect(function(input, gpe)
+    if gpe then return end
+    if input.KeyCode == Enum.KeyCode.E then
+        orbEvent:FireServer()
+    end
+end)
+]]
+
